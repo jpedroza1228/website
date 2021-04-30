@@ -1,0 +1,13 @@
+---
+title: Using Google Compute
+author: ''
+date: '2021-04-30'
+slug: using-google-compute
+categories: []
+tags: []
+---
+
+```{r}
+summary(Orange)
+```
+
