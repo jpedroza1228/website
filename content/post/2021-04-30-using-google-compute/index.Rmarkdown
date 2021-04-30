@@ -7,7 +7,61 @@ categories: []
 tags: []
 ---
 
-```{r}
-summary(Orange)
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
 ```
 
+Here I will guide you through the creation of your own remote server of RStudio. If you are asking yourself "Why would I ever use a VM when I can do this on my local machine?" the two main reasons are to clear up space to do other tasks on your local machine and because you can request a stronger specifications for your VM to run things much faster. I'm sure everyone has been at that point where their analyses are running and then R decides to terminate your session. This will hopefully reduce the amount of times that happens to you. Before we begin, it is important that you have some things set up prior to trying to create a virtual machine (VM) using Google Cloud and Google Compute. In this tutorial, I'll be building a remote RStudio server and in the future, I may use this resource to run a shiny app. 
+
+### Things you'll need
+
+  * [Google Cloud Platform account](https://cloud.google.com/)
+  * [Google Cloud SDK/Gcloud command line](https://cloud.google.com/sdk/)
+  * Service Account Key
+    
+For the Google cloud account, you'll need to put a credit card on file. You will only be charged for the resources you use. For instance, if you are building a remote server following this tutorial then you'll want to stop the VM after you are done, but we'll get to that in a second. I believe Google offers a $300 credit for signing up that can be used in a year. Afterward the prices to conduct analyses are reasonable. If you plan to use this to create a shiny app that is constantly running or using a lot of resources, then prices will begin to grow so just be aware of that.
+
+I will be showing how to create a server using two methods. The first is to use the gcloud command line to create a VM. The second one is to build the VM using Google's console through Google Compute. 
+
+The gcloud command line makes it easier to build the VM but I will offer two options for creating your VM. The gcloud command line requires a basic understanding of Linux commands. Also, in code later on I will use Ubuntu 16.04, a Linux distribution, which has the apt package management system. 
+
+Prior to making a service key, you'll need to create a project. 
+
+### Creating a Project Using Gcloud Command Line
+
+To create a project using the gcloud command line, you will open the Google Cloud SDK Shell application on your machine and then put the following line in. As a *R* user, I often make anything with underscores, but this will throw an error when trying to create your project. Instead, dashes will work. 
+
+```{r, engine = 'bash', eval = FALSE}
+gcloud projects create PROJECT-ID
+
+gcloud projects create jp-project-example
+
+```
+
+![project creation](google_compute_images/project_creation.PNG)
+
+If you want to put your project within a folder or an organization you can follow the code below.
+
+```{r, engine = 'bash', eval = FALSE}
+gcloud projects create jp-project-example --organization = organization-example
+
+gcloud projects create jp-project-example --folder = folder-example
+```
+
+If you get prompted to update components, you can follow the code that is on screen. This process only takes a few minutes. 
+
+### Creating a Project Using Google Console
+
+To create a project using Google Console, you can start from the [main page](https://console.cloud.google.com) where you will be prompted to create a project or you can click on this [link](https://console.cloud.google.com/cloud-resource-manager). You'll then click on the `Create Project` at the top and include a name. Similarly, you'll need to use dashes for your project name or if you put spaces Google will automatically put dashes in. 
+
+### Creating a Service Key for your Project
+
+Now that you have a project name, you will want to create a service key. While you can create a service account using the gcloud command line, I find it easier to just create it through the console. To create your service account, you'll click on the navigation menu to the left of Google Cloud Platform. ![navigation menu](google_compute_images/navigation_menu.PNG)
+
+From there, you'll hover over the `APIs & Services` and click on the `Credentials` tab. ![API and credentails](google_compute_images/api_credentials.png)
+
+You'll then click on `Create Credentials` and click on `Service Account`. Here you can put a name for your service account and it should be listed on the Credentials page now.
+
+## Building a VM using the Gcloud Command Line
+
+So now lets begin building our VM. A lot of the inspiration of this blog post is from [Grant McDermott, PhD](https://github.com/grantmcdermott/rstudio-compute-engine). First, using the gcloud command line, we will 

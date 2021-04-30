@@ -1,0 +1,255 @@
+---
+title: APHA PA Section Twitter Conference
+author: 'Jonathan A. Pedroza'
+date: '2021-04-30'
+slug: twitter-conference-creation
+categories: []
+tags: []
+---
+
+I thought I'd talk about the analyses I conducted for my submission to the American Public Health Association Physical Activity Section's Twitter Conference. I thought it was a fun opportunity to disseminate some analyses that I conducted using public data from the [County Health Rankings and Roadmap](https://www.countyhealthrankings.org/) to examine what factors are associated with leisure-time physical activity (LTPA) in counties in California from 2016 to 2020. If you are interested in the presentation itself, you can follow it [here](https://twitter.com/PaSectionAPHA/status/1309192269447143425).
+
+Physical activity is important as its related to many physical and mental health conditions. It is also a health behavior that can be modified slightly easier than other health behaviors. While not as beneficial as extended periods of exercise, even walking for leisure can be beneficial for one's health. I was predominately interested in California because I wanted to know how much variation there was between the counties. For instance, there are areas like San Francisco county and Los Angeles County, which may be seen as hubs for cultures of being physically active, but what about counties throughout Central California. I'm also interested in LTPA engagement because this health behavior has several social determinants of health that impact how much LTPA individuals can engage in. The social determinant that I'm most interested in is the role that access to recreational facilities and parks have on counties' LTPA engagement. Since I was interested in looking at variation between counties while also examining the longitudinal association between access and LTPA, I decided to create a two-level multilevel model with time (level 1) nested within counties (level 2). 
+
+### Packages ued
+
+```{r packages used, include = TRUE, echo = FALSE}
+library(tidyverse)
+library(inspectdf)
+library(psych)
+library(lme4)
+library(lmerTest)
+library(optimx)
+library(ggmap)
+library(maps)
+library(RColorBrewer)
+library(ggrepel)
+library(gganimate)
+library(transformr)
+display.brewer.all()
+
+options(max.print = 99999)
+options(scipen = 999)
+theme_set(theme_minimal())
+```
+
+### Functions
+
+Before beginning I created a simple function to get the intraclass correlation coefficient (ICC). I also included a function to get data from the 5 years of County Health Rankings data. The function to get the ICC from random-intercept models is the between county variation divided by the total variation between counties and within counties. This gives you information about how much of the variation in the model can be attributed to differences between counties regarding your outcome. Random-intercept models were tested because I was only interested in knowing the variation in counties' LTPA engagement. There were also not enough points for each county to test individual slopes for each county (random-slopes model). 
+
+```{r functions and data, eval = TRUE, echo = FALSE}
+
+county_icc_2level <- function(multi_model){
+  between <- multi_model$vcov[1]
+  total <- multi_model$vcov[1] + multi_model$vcov[2]
+  
+  between/total
+}
+counties <- function(years){
+  
+  link <- glue::glue('https://raw.githubusercontent.com/jpedroza1228/dissertation/master/final_data/county{years}_sub.csv')
+  
+  rio::import(link, setclass = 'tibble')
+  
+}
+county <- map_df(16:20, ~counties(.x))
+county <- county %>% 
+  dplyr::select(rowid,
+                state_fips_code:release_year,
+                poor_or_fair_health:access_to_exercise_opportunities,
+                preventable_hospital_stays,
+                some_college:driving_alone_to_work,
+                food_insecurity:uninsured_children,
+                median_household_income:percent_rural) %>% 
+  rename(year = release_year,
+         state = state_abbreviation) %>% 
+  mutate(phyact_percent = (physical_inactivity*100),
+         ltpa_percent = (100 - phyact_percent)) %>% 
+  rename(access_pa = access_to_exercise_opportunities) %>% 
+  mutate(smoking_percent = adult_smoking*100,
+         obesity_percent = adult_obesity*100,
+         access_pa_percent = access_pa*100,
+         college_percent = some_college*100,
+         unemployment_percent = unemployment*100,
+         driving_alone_percent = driving_alone_to_work*100,
+         percent_65plus = percent_65_and_older*100,
+         latino_percent = percent_hispanic*100,
+         rural_percent = percent_rural*100) %>% 
+  dplyr::select(-adult_smoking,
+                -adult_obesity,
+                -access_pa,
+                -some_college,
+                -unemployment,
+                -driving_alone_to_work,
+                -percent_65_and_older,
+                -percent_hispanic,
+                -percent_rural,
+                -phyact_percent,
+                -physical_inactivity) %>% 
+  filter(fips_code != '0') 
+
+```
+
+I also made some slight changes to my data. The first was to get rid of the estimates for each state and only focus on estimates from the county. I also wanted to treat year as a continuous variable in my models but wanted to keep the `year` variable as a factor too. Then after filtering to only examine California counties I used the `str_replace_all` function from the `stringr` package to get rid of the county name after each observation. This was to make it easier to join with map data from the `maps` package. Lastly, I made the counties title case to also make joining the observations easier. 
+
+```{r county changes, eval = TRUE, echo = FALSE}
+county <- county %>% 
+  filter(str_detect(fips_code, '000$', negate = TRUE))
+
+county$year_num <- as.numeric(county$year)
+
+ca <- county %>% 
+  filter(state == 'CA') %>% 
+  mutate(no_name_county = str_replace_all(county_name, '_county', ''))
+
+ca$no_name_county <- str_to_title(ca$no_name_county)
+```
+
+### Models
+
+Now when running the first model, I was first interested in examining if there was an increase in LTPA engagement in all California counties from 2016 to 2020. From the finding below, it shows that in California, there was a decrease in LTPA over that time. It's also important to note that `lmerTest` and `lme4` both have a `lmer` function. By namespacing them with two colons, you can see that the summary information is slightly different. 
+
+```{r models}
+preliminary_ltpa_long <- lmerTest::lmer(ltpa_percent ~ year_num + (1 | county_fips_code), data = ca,
+                              REML = FALSE)
+summary(preliminary_ltpa_long)
+
+prelim_ltpa_lmer <- lme4::lmer(ltpa_percent ~ year_num +(1 | county_fips_code), data = ca,
+                              REML = FALSE)
+summary(prelim_ltpa_lmer)
+
+ltpa_null_icc <- as_tibble(VarCorr(preliminary_ltpa_long))
+ltpa_null_icc
+
+county_icc_2level(ltpa_null_icc)
+```
+
+Along with the fixed effects, we also got our random effects for both differences found between counties for LTPA engagement and differences within counties for LTPA engagement. This shows that there was a good amount of variation between counties (σ2 = 7.19) but also a large amount of variation within each county in California (σ2 = 5.17). Using the function to calculate the ICC, it found that county differences attributed to 58% of the variation in LTPA engagement. Something that should be considered is the potential for heteroscedastic residual variance at level 1. There is also the issue that the residuals could suggest spatial autocorrelation or clustering within these counties. Maybe I'll create something on these soon. But for the time being, lets move on to what was found for the twitter conference.  
+
+```{r models cont}
+
+ltpa_long_access <- lmer(ltpa_percent ~ year_num + violent_crime + obesity_percent + median_household_income + rural_percent +
+                           access_pa_percent + (1 | county_fips_code), data = ca,
+                         REML = FALSE)
+
+anova(preliminary_ltpa_long, ltpa_long_access)
+
+other_var <- lmer(ltpa_percent ~ year_num + violent_crime + obesity_percent + median_household_income + rural_percent + (1 | county_fips_code), data = ca,
+                         REML = FALSE)
+
+anova(other_var, ltpa_long_access)
+
+```
+
+With the inclusion of several predictors for fixed effects, a likelihood ratio test was conducted to see if the inclusion of these fixed effects revealed a significantly better fitting model. The inclusion of these predictors revealed a better fitting model. It would probably be better to see if the inclusion of one variable of interest, such as access, resulted in a better fitting model than a model with the other social determinants of health. As can be see here, the likelihood ratio test of including only access still resulted in a signifcantly better fitting model. 
+
+```{r models cont1}
+summary(ltpa_long_access)
+```
+
+The model summary suggests that the fixed effect of access on LTPA engagement was significantly associated. The thing that stands out the most here is that the inclusion of the predictors resulted in more variation within counties than between counties. So lets look into that more closely. 
+
+```{r models cont2}
+ltpa_access_icc <- as_tibble(VarCorr(ltpa_long_access))
+ltpa_access_icc
+county_icc_2level(ltpa_access_icc)
+```
+
+The ICC suggests that 29% of the variation explained is from differences between counties. It is also beneficial to look at all of this through visuals. 
+
+### Visuals Prep
+
+Below we'll start by using the `maps` package to get county-level data of the contiguous United States. The steps below were to make sure this data frame joined with the county health rankings data we had created previously. 
+
+```{r visual counties, include = FALSE}
+
+us <- map_data(map = 'county')
+
+us <- us %>% 
+  janitor::clean_names() %>% 
+  rename(state = region,
+         no_name_county = subregion) 
+
+us$state <- str_replace_all(us$state, pattern = " ", replacement = "_")
+us$no_name_county <- str_replace_all(us$no_name_county, pattern = " ", replacement = "_")
+
+us <- us %>% 
+  mutate(state = recode(state, 'alabama' = 'AL','alaska' = 'AK','arizona' = 'AZ','arkansas' = 'AR',
+                        'california' = 'CA','colorado' = 'CO','connecticut' = 'CT',
+                        'delaware' = 'DE',
+                        'florida' = 'FL',
+                        'georgia' = 'GA',
+                        'hawaii' = 'HI',
+                        'idaho' = 'ID','illinois' = 'IL','indiana' = 'IN','iowa' = 'IA',
+                        'kansas' = 'KS','kentucky' = 'KY',
+                        'louisiana' = 'LA',
+                        'maine' = 'ME','maryland' = 'MD','massachusetts' = 'MA','michigan' = 'MI','minnesota' = 'MN','mississippi' = 'MS','missouri' = 'MO','montana' = 'MT',
+                        'nebraska' = 'NE','nevada' = 'NV','new hampshire' = 'NH','new jersey' = 'NJ','new mexico' = 'NM','new york' = 'NY','north carolina' = 'NC','north dakota' = 'ND',
+                        'ohio' = 'OH','oklahoma' = 'OK','oregon' = 'OR',
+                        'pennsylvania' = 'PA',
+                        'rhode island' = 'RI',
+                        'south carolina' = 'SC','south dakota' = 'SD',
+                        'tennessee' = 'TN','texas' = 'TX',
+                        'utah' = 'UT',
+                        'vermont' = 'VT','virginia' = 'VA',
+                        'washington' = 'WA','west virginia' = 'WV','wisconsin' = 'WI','wyoming' = 'WY'))
+
+county <- county %>%
+  mutate(no_name_county = str_replace_all(county_name, '_county', ''))
+
+visual <- right_join(us, county, by = c('state', 'no_name_county'))
+
+ca_visual <- visual %>% 
+  filter(state == 'CA') %>%
+  filter(no_name_county != 'california')
+
+```
+
+### Visualizing model
+
+One way to visualize the variation between counties in our final model (`ltpa_long_access`) is to use a caterpillar plot. This allows you to view variation in the residuals of each county for your outcome. From the visual, you can see the differences between Humboldt County and Tehama County. 
+
+```{r}
+main_effects_var <- ranef(ltpa_long_access, condVar = TRUE)
+
+main_effects_var <- as.data.frame(main_effects_var)
+
+main_effects_var <- main_effects_var %>% 
+  rename(main_effects_term = term,
+         county_fips_code = grp,
+         main_effects_diff = condval,
+         main_effects_se = condsd) %>% 
+  mutate(county_fips_code = as.numeric(county_fips_code))
+
+main_effects_var$no_name_county <- unique(ca$no_name_county)
+
+main_effects_var %>% 
+  ggplot(aes(fct_reorder(no_name_county, main_effects_diff), main_effects_diff)) +
+  geom_errorbar(aes(ymin = main_effects_diff + qnorm(0.025)*main_effects_se,
+                  ymax = main_effects_diff + qnorm(0.975)*main_effects_se)) +
+  geom_point(aes(color = no_name_county)) +
+  coord_flip() +
+  labs(x = ' ',
+     y = 'Differences in Leisure-time Physical Activity',
+     title = 'Variation in Leisure-time Physical Activity\nAcross California Counties') +
+  theme(legend.position = 'none')
+
+```
+
+This plot shows the fixed effect of access and LTPA across the various years. 
+
+```{r}
+
+ca %>% 
+  mutate(year = as.factor(year)) %>% 
+  ggplot(aes(access_pa_percent, ltpa_percent)) +
+  geom_point(aes(color = year)) +
+  geom_smooth(color = 'dodgerblue',
+            method = 'lm', se = FALSE, size = 1) +
+  theme(legend.title = element_blank()) +
+  labs(x = 'Access to Physical Activity Opportunities',
+       y = 'Leisure-time Physical Activity',
+       title = 'The Statewide Association of Access\nand Physical Activity')
+```
+
+
